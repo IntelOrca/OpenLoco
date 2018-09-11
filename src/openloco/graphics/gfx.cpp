@@ -2,6 +2,7 @@
 #include "../environment.h"
 #include "../interop/interop.hpp"
 #include "../ui.h"
+#include "../utility/stream.hpp"
 #include "colours.h"
 #include "image_ids.h"
 #include <algorithm>
@@ -11,6 +12,7 @@
 #include <memory>
 
 using namespace openloco::interop;
+using namespace openloco::utility;
 
 namespace openloco::gfx
 {
@@ -58,18 +60,6 @@ namespace openloco::gfx
             std::back_inserter(elements),
             [](g1_element32_t src) { return g1_element(src); });
         return elements;
-    }
-
-    template<typename T1, typename T2, typename T3>
-    std::basic_istream<T1, T2>& read_data(std::basic_istream<T1, T2>& stream, T3* dst, size_t count)
-    {
-        return stream.read((char*)dst, count * sizeof(T3));
-    }
-
-    template<typename T1, typename T2, typename T3>
-    std::basic_istream<T1, T2>& read_data(std::basic_istream<T1, T2>& stream, T3& dst)
-    {
-        return read_data(stream, &dst, 1);
     }
 
     // 0x0044733C
