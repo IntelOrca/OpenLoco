@@ -94,9 +94,15 @@ namespace openloco::config
         resolution_t fullscreen_resolution;
     };
 
+    struct audio_config
+    {
+        std::string device;
+    };
+
     struct new_config
     {
         display_config display;
+        audio_config audio;
         std::string loco_install_path;
         bool breakdowns_disabled = false;
     };
