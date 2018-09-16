@@ -73,6 +73,7 @@ namespace openloco
 
     static void tick_logic(int32_t count);
     static void tick_logic();
+    static bool should_tick_wait();
     static void tick_wait();
     static void date_tick();
     static void sub_46FFCA();
@@ -283,6 +284,72 @@ namespace openloco
         gfx::clear(gfx::screen_dpi(), 0x0A0A0A0A);
     }
 
+    static loc16 _thing_locations_a[thingmgr::max_things];
+    static loc16 _thing_locations_b[thingmgr::max_things];
+
+    static void store_thing_locations(loc16* thing_locations)
+    {
+        for (size_t i = 0; i < thingmgr::max_things; i++)
+        {
+            auto t = thingmgr::get<thing>((thing_id_t)i);
+            thing_locations[i].x = t->x;
+            thing_locations[i].y = t->y;
+            thing_locations[i].z = t->z;
+        }
+    }
+
+    static void tween_pre_tick()
+    {
+        store_thing_locations(_thing_locations_a);
+    }
+
+    static void tween_post_tick()
+    {
+        store_thing_locations(_thing_locations_b);
+    }
+
+    static bool thing_should_tween(const thing& t)
+    {
+        return true;
+    }
+
+    void tween_write(float alpha)
+    {
+        const float inv = (1.0f - alpha);
+        for (size_t i = 0; i < thingmgr::max_things; i++)
+        {
+            auto t = thingmgr::get<thing>((thing_id_t)i);
+            if (thing_should_tween(*t))
+            {
+                auto posA = _thing_locations_a[i];
+                auto posB = _thing_locations_b[i];
+                if (posA.x != posB.x || posA.y != posB.y || posA.z != posB.z)
+                {
+                    loc16 newLocation = {
+                        (int16_t)std::round(posB.x * alpha + posA.x * inv),
+                        (int16_t)std::round(posB.y * alpha + posA.y * inv),
+                        (int16_t)std::round(posB.z * alpha + posA.z * inv)
+                    };
+                    t->move_to(newLocation);
+                    t->invalidate_sprite();
+                }
+            }
+        }
+    }
+
+    void tween_restore()
+    {
+        for (size_t i = 0; i < thingmgr::max_things; i++)
+        {
+            auto t = thingmgr::get<thing>((thing_id_t)i);
+            if (thing_should_tween(*t))
+            {
+                t->invalidate_sprite();
+                t->move_to(_thing_locations_b[i]);
+            }
+        }
+    }
+
     // 0x0046A794
     static void tick()
     {
@@ -325,9 +392,9 @@ namespace openloco
             last_tick_time = platform::get_time();
         }
 
-        uint32_t time = platform::get_time();
-        time_since_last_tick = (uint16_t)std::min(time - last_tick_time, 500U);
-        last_tick_time = time;
+        // uint32_t time = platform::get_time();
+        // time_since_last_tick = (uint16_t)std::min(time - last_tick_time, 500U);
+        // last_tick_time = time;
 
         if (!is_paused())
         {
@@ -456,7 +523,25 @@ namespace openloco
                 }
 
                 sub_46FFCA();
-                tick_logic(numUpdates);
+                // tick_logic(numUpdates);
+
+                static uint32_t _accumulator;
+                auto currentTick = platform::get_time();
+                auto elapsed = currentTick - last_tick_time;
+                last_tick_time = currentTick;
+                _accumulator = std::min<uint32_t>(_accumulator + elapsed, 100);
+                while (_accumulator >= 25)
+                {
+                    // uint32_t time = platform::get_time();
+                    // time_since_last_tick = (uint16_t)std::min(time - last_tick_time, 500U);
+                    // last_tick_time = time;
+
+                    tween_pre_tick();
+                    tick_logic(1);
+                    tween_post_tick();
+
+                    _accumulator -= 25;
+                }
 
                 addr<0x00525F62, int16_t>()++;
                 call(0x0043D9D4);
@@ -471,9 +556,15 @@ namespace openloco
                     return; // won't be reached
                 }
 
+                const float alpha = (float)_accumulator / 25;
+                tween_write(alpha);
+
                 call(0x00431695);
                 call(0x00452B5F);
                 sub_46FFCA();
+
+                tween_restore();
+
                 if (config::get().countdown != 0xFF)
                 {
                     config::get().countdown++;
@@ -491,8 +582,6 @@ namespace openloco
                 ui::set_cursor_pos(addr<0x00F2538C, int32_t>(), addr<0x00F25390, int32_t>());
             }
         }
-
-        tick_wait();
     }
 
     static void tick_logic(int32_t count)
@@ -632,13 +721,18 @@ namespace openloco
         }
     }
 
+    static bool should_tick_wait()
+    {
+        return platform::get_time() - last_tick_time < 25;
+    }
+
     // 0x0046AD4D
-    void tick_wait()
+    static void tick_wait()
     {
         do
         {
             // Idle loop for a 40 FPS
-        } while (platform::get_time() - last_tick_time < 25);
+        } while (should_tick_wait());
     }
 
     void prompt_tick_loop(std::function<bool()> tickAction)
@@ -688,7 +782,10 @@ namespace openloco
                 sub_4058F5();
             }
             sub_4062E0();
-            tick();
+            //if (!should_tick_wait())
+            {
+                tick();
+            }
             ui::render();
         }
         sub_40567E();

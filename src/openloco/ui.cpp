@@ -361,6 +361,32 @@ namespace openloco::ui
         }
     }
 
+    static int32_t _fps;
+    static int32_t _fps_frame_count = 0;
+    static uint32_t _fps_start;
+    static void measure_fps()
+    {
+        if (_fps_frame_count == 0)
+        {
+            // Start measure
+            _fps_start = SDL_GetTicks();
+            _fps_frame_count++;
+        }
+        else if (_fps_frame_count == 60 * 3)
+        {
+            auto duration = SDL_GetTicks() - _fps_start;
+            _fps = (_fps_frame_count * 1000) / duration;
+            _fps_frame_count = 0;
+            char buffer[64]{};
+            std::snprintf(buffer, sizeof(buffer), "OpenLoco | FPS: %d", _fps);
+            SDL_SetWindowTitle(window, buffer);
+        }
+        else
+        {
+            _fps_frame_count++;
+        }
+    }
+
     void render()
     {
         if (window != nullptr && surface != nullptr)
@@ -390,6 +416,8 @@ namespace openloco::ui
             // Copy the surface to the window
             SDL_BlitSurface(surface, nullptr, SDL_GetWindowSurface(window), nullptr);
             SDL_UpdateWindowSurface(window);
+
+            measure_fps();
         }
     }
 
