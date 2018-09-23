@@ -106,6 +106,7 @@ namespace openloco::config
         std::string loco_install_path;
         std::string language = "en-GB";
         bool breakdowns_disabled = false;
+        float scale_factor = 1.25;
     };
 
 #pragma pack(pop)
