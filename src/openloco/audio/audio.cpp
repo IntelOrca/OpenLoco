@@ -13,6 +13,8 @@
 #include "channel.h"
 #include "music_channel.h"
 #include "vehicle_channel.h"
+// Prevent SDL2 from defining 'main' and causing error with our window_type::main enum class
+#define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_mixer.h>
 #include <array>
