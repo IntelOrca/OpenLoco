@@ -60,37 +60,38 @@ set_property(SOURCE ${CMAKE_SOURCE_DIR}/src/openloco/version.cpp
     OPENLOCO_COMMIT_SHA1_SHORT="${OPENLOCO_COMMIT_SHA1_SHORT}")
 
 # Set some compiler features
-set(COMMON_COMPILE_OPTIONS "${COMMON_COMPILE_OPTIONS} -fstrict-aliasing -Wall -Wextra -Wno-unused-parameter")
+if (NOT MSVC)
+    set(COMMON_COMPILE_OPTIONS "${COMMON_COMPILE_OPTIONS} -fstrict-aliasing -Wall -Wextra -Wno-unused-parameter")
+    if (STRICT)
+        set(COMMON_COMPILE_OPTIONS "${COMMON_COMPILE_OPTIONS} -Werror")
+    endif ()
 
-if (STRICT)
-    set(COMMON_COMPILE_OPTIONS "${COMMON_COMPILE_OPTIONS} -Werror")
+    # Poke some holes in -Wall:
+    set(COMMON_COMPILE_OPTIONS
+        "${COMMON_COMPILE_OPTIONS} \
+        -Wno-unknown-pragmas \
+        -Wno-unused-private-field \
+        ")
+
+    # Set warnings common to supported compilers
+    set(COMMON_COMPILE_OPTIONS
+        "${COMMON_COMPILE_OPTIONS} \
+        -Waddress \
+        -Warray-bounds \
+        -Wchar-subscripts \
+        -Wenum-compare \
+        -Wformat \
+        -Wignored-qualifiers \
+        -Winit-self \
+        -Wmissing-declarations \
+        -Wnon-virtual-dtor \
+        -Wnull-dereference \
+        -Wstrict-aliasing \
+        -Wstrict-overflow=1 \
+        -Wundef \
+        -Wunreachable-code \
+        ")
 endif ()
-
-# Poke some holes in -Wall:
-set(COMMON_COMPILE_OPTIONS
-    "${COMMON_COMPILE_OPTIONS} \
-    -Wno-unknown-pragmas \
-    -Wno-unused-private-field \
-    ")
-
-# Set warnings common to supported compilers
-set(COMMON_COMPILE_OPTIONS
-    "${COMMON_COMPILE_OPTIONS} \
-    -Waddress \
-    -Warray-bounds \
-    -Wchar-subscripts \
-    -Wenum-compare \
-    -Wformat \
-    -Wignored-qualifiers \
-    -Winit-self \
-    -Wmissing-declarations \
-    -Wnon-virtual-dtor \
-    -Wnull-dereference \
-    -Wstrict-aliasing \
-    -Wstrict-overflow=1 \
-    -Wundef \
-    -Wunreachable-code \
-    ")
 
 set(OBJ_FORMAT "elf32-i386")
 set(LINKER_SCRIPT "ld_script_i386.xc")
@@ -160,8 +161,10 @@ if (APPLE)
     set_source_files_properties(${OLOCO_MM_SOURCES} PROPERTIES COMPILE_FLAGS "-x objective-c++ -fmodules")
 endif ()
 
-set(PIE_FLAG "-fno-pie")
-set(TARGET_M "-m32")
+if (NOT MSVC)
+    set(PIE_FLAG "-fno-pie")
+    set(TARGET_M "-m32")
+endif ()
 
 # Check if a flag exists and add it to the list of compiler (so, not linker) options
 function (ADD_CHECK_CXX_COMPILER_FLAG _CXXFLAGS _CACHE_VAR _FLAG)
@@ -213,16 +216,18 @@ else()
     find_package(yaml-cpp REQUIRED HINTS /usr/lib32/cmake/yaml-cpp)
 endif()
 
-# Disable optimizations for interop.cpp for all compilers, to allow optimized
-# builds without need for -fno-omit-frame-pointer
-set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/openloco/interop/interop.cpp" PROPERTIES COMPILE_FLAGS -fno-omit-frame-pointer)
+if (NOT MSVC)
+    # Disable optimizations for interop.cpp for all compilers, to allow optimized
+    # builds without need for -fno-omit-frame-pointer
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/openloco/interop/interop.cpp" PROPERTIES COMPILE_FLAGS -fno-omit-frame-pointer)
+endif ()
 
 if (NOT CMAKE_CXX_STANDARD)
     set(CMAKE_CXX_STANDARD 17)
 endif()
 
-if (MINGW)
-    add_library(${PROJECT} ${OLOCO_SOURCES})
+if (WIN32)
+    add_library(${PROJECT} SHARED ${OLOCO_SOURCES})
     target_link_libraries(${PROJECT} winmm)
 else ()
     add_executable(${PROJECT} ${OLOCO_SOURCES} ${OLOCO_MM_SOURCES} ${LOCO_SECTIONS})
@@ -234,17 +239,28 @@ target_link_libraries(${PROJECT} yaml-cpp ${YAML_CPP_LIBRARIES})
 target_link_libraries(${PROJECT} ${PNG_LIBRARIES})
 
 
-if (NOT MINGW)
+if (NOT WIN32)
     add_dependencies(${PROJECT} segfiles)
+    target_compile_definitions(${PROJECT} PRIVATE _NO_LOCO_WIN32_=1)
 endif()
 
-target_compile_definitions(${PROJECT} PRIVATE _NO_LOCO_WIN32_=1)
-if (NOT APPLE)
+if (NOT APPLE AND NOT MSVC)
     target_link_libraries(${PROJECT} stdc++fs)
 endif()
 
 if (MINGW)
-    target_compile_definitions(${PROJECT} PRIVATE _WIN32_WINNT=0x0600 SDL_MAIN_HANDLED=1)
+    target_compile_definitions(${PROJECT} PRIVATE _WIN32_WINNT=0x0600)
+endif()
+
+if (MSVC)
+    target_compile_definitions(${PROJECT} PRIVATE _CRT_NONSTDC_NO_WARNINGS _CRT_SECURE_NO_WARNINGS)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /WX -wd4068 -wd4244")
+    # C4068: unknown pragma
+    # C4244: 'conversion_type': conversion from 'type1' to 'type2', possible loss of data
+endif()
+
+if (WIN32)
+    target_compile_definitions(${PROJECT} PRIVATE SDL_MAIN_HANDLED=1)
 endif()
 
 if (APPLE)
@@ -313,4 +329,17 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 else ()
     # Dummy target to ease invocation
     add_custom_target(${PROJECT}-headers-check)
+endif ()
+
+if (WIN32)
+    add_custom_target("openloco.exe" ALL
+        COMMAND ${CMAKE_COMMAND} -E copy 
+        ${CMAKE_CURRENT_SOURCE_DIR}/loco.exe
+        ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.exe)
+    add_custom_target("data" ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/data
+        ${CMAKE_CURRENT_BINARY_DIR}/data)
+
+    add_dependencies(${PROJECT} "openloco.exe" "data")
 endif ()
